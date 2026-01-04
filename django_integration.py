@@ -65,7 +65,7 @@ def generate_shapes(request):
         
         # Prepare environment with API key
         env = os.environ.copy()
-        env['ANTHROPIC_API_KEY'] = api_key
+        env['OPENAI_API_KEY'] = api_key
         
         # Call the MCP server as a subprocess
         result = subprocess.run(
