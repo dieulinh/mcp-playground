@@ -10,7 +10,6 @@ import sys
 from typing import Any
 import logging
 from dotenv import load_dotenv
-import pdb
 
 from mcp.server import Server
 from mcp.types import Tool, TextContent
@@ -90,7 +89,6 @@ def generate_shapes(request: str, canvas_width: int = 1200, canvas_height: int =
     
     if not request.strip():
         return {"error": "Request cannot be empty"}
-    pdb.set_trace()
     
     try:
         # Add canvas dimensions to the prompt for context
