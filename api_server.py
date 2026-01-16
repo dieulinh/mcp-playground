@@ -16,7 +16,8 @@ from dotenv import load_dotenv
 from server import (
     generate_shapes, list_shapes, modify_shape, delete_shape,
     arrange_shapes, generate_palette, apply_style_to_shapes,
-    batch_modify_shapes, generate_pattern, analyze_canvas, generate_icon
+    batch_modify_shapes, generate_pattern, analyze_canvas, generate_icon,
+    generate_data_visualization
 )
 
 # Load environment variables
@@ -296,6 +297,34 @@ def api_analyze_canvas():
     
     except Exception as e:
         logger.error(f"Error in analyze_canvas endpoint: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/ai/generate-data-visualization', methods=['POST'])
+def api_generate_data_visualization():
+    """Generate data visualizations like tables, charts, graphs."""
+    try:
+        data_param = request.get_json()
+        
+        if not data_param or 'data' not in data_param:
+            return jsonify({"error": "Missing 'data' parameter"}), 400
+        
+        data = data_param['data']
+        viz_type = data_param.get('viz_type', 'table')
+        canvas_width = data_param.get('canvas_width') or data_param.get('canvasWidth', 1200)
+        canvas_height = data_param.get('canvas_height') or data_param.get('canvasHeight', 600)
+        
+        logger.info(f"Generating {viz_type} visualization with canvas {canvas_width}x{canvas_height}")
+        
+        result = generate_data_visualization(data, viz_type, canvas_width, canvas_height)
+        
+        if "error" in result:
+            return jsonify(result), 400
+        
+        return jsonify(result), 200
+    
+    except Exception as e:
+        logger.error(f"Error in generate_data_visualization endpoint: {e}")
         return jsonify({"error": str(e)}), 500
 
 

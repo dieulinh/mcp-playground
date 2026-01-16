@@ -585,6 +585,197 @@ def analyze_canvas(shapes: list[dict]) -> dict[str, Any]:
         return {"error": f"Error: {str(e)}"}
 
 
+def generate_data_visualization(data: dict, viz_type: str = 'table', canvas_width: int = 1200, canvas_height: int = 600) -> dict[str, Any]:
+    """
+    Generate data visualizations (tables, bar charts, pie charts) from structured data.
+    
+    Args:
+        data: Dictionary containing the data and structure
+              For tables: {"headers": ["Name", "Age"], "rows": [["John", "25"], ["Jane", "30"]]}
+              For charts: {"labels": ["A", "B", "C"], "values": [10, 20, 15]}
+        viz_type: Type of visualization ('table', 'bar_chart', 'pie_chart')
+        canvas_width: Canvas width for positioning
+        canvas_height: Canvas height for positioning
+    
+    Returns:
+        Dictionary with visualization shapes
+    """
+    try:
+        shapes = []
+        
+        if viz_type == 'table':
+            headers = data.get('headers', [])
+            rows = data.get('rows', [])
+            
+            if not headers and not rows:
+                return {"error": "Table data must have 'headers' or 'rows'"}
+            
+            num_cols = len(headers) if headers else (len(rows[0]) if rows else 0)
+            num_rows = len(rows) + (1 if headers else 0)
+            
+            cell_width = min(150, (canvas_width - 100) // num_cols) if num_cols > 0 else 100
+            cell_height = 40
+            
+            # Create table object
+            all_cells = []
+            if headers:
+                all_cells.append(headers)
+            all_cells.extend(rows)
+            
+            table_x = 50
+            table_y = 100
+            
+            shapes.append({
+                'type': 'table',
+                'x': table_x,
+                'y': table_y,
+                'rows': num_rows,
+                'cols': num_cols,
+                'cellWidth': cell_width,
+                'cellHeight': cell_height,
+                'cells': all_cells,
+                'color': '#000000'
+            })
+            
+            logger.info(f"Generated table with {num_rows}x{num_cols} cells")
+            
+        elif viz_type == 'bar_chart':
+            labels = data.get('labels', [])
+            values = data.get('values', [])
+            
+            if not labels or not values or len(labels) != len(values):
+                return {"error": "Bar chart needs 'labels' and 'values' arrays of equal length"}
+            
+            max_value = max(values) if values else 1
+            chart_width = canvas_width - 200
+            chart_height = canvas_height - 300
+            bar_width = chart_width // (len(labels) * 2)
+            x_start = 100
+            y_baseline = canvas_height - 100
+            
+            # Draw bars
+            colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899']
+            for i, (label, value) in enumerate(zip(labels, values)):
+                bar_height = (value / max_value) * chart_height
+                x = x_start + (i * bar_width * 2) + bar_width // 2
+                y = y_baseline - bar_height
+                
+                shapes.append({
+                    'type': 'rect',
+                    'x': x,
+                    'y': y,
+                    'width': bar_width,
+                    'height': bar_height,
+                    'color': colors[i % len(colors)]
+                })
+                
+                # Label
+                shapes.append({
+                    'type': 'text',
+                    'x': x + bar_width // 2,
+                    'y': y_baseline + 20,
+                    'text': str(label),
+                    'fontSize': 14,
+                    'fontFamily': 'Arial',
+                    'color': '#000000'
+                })
+                
+                # Value
+                shapes.append({
+                    'type': 'text',
+                    'x': x + bar_width // 2,
+                    'y': y - 10,
+                    'text': str(value),
+                    'fontSize': 12,
+                    'fontFamily': 'Arial',
+                    'color': '#000000'
+                })
+            
+            # Baseline
+            shapes.append({
+                'type': 'line',
+                'x1': x_start,
+                'y1': y_baseline,
+                'x2': x_start + chart_width,
+                'y2': y_baseline,
+                'color': '#000000'
+            })
+            
+            logger.info(f"Generated bar chart with {len(labels)} bars")
+            
+        elif viz_type == 'pie_chart':
+            labels = data.get('labels', [])
+            values = data.get('values', [])
+            
+            if not labels or not values or len(labels) != len(values):
+                return {"error": "Pie chart needs 'labels' and 'values' arrays of equal length"}
+            
+            total = sum(values)
+            if total == 0:
+                return {"error": "Total of values must be greater than 0"}
+            
+            center_x = canvas_width // 2
+            center_y = canvas_height // 2
+            radius = min(canvas_width, canvas_height) // 4
+            
+            colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899']
+            current_angle = 0
+            
+            for i, (label, value) in enumerate(zip(labels, values)):
+                angle = (value / total) * 360
+                
+                # Create wedge using triangle approximation
+                for j in range(int(angle)):
+                    rad1 = math.radians(current_angle + j)
+                    rad2 = math.radians(current_angle + j + 1)
+                    
+                    x1 = center_x + radius * math.cos(rad1)
+                    y1 = center_y + radius * math.sin(rad1)
+                    x2 = center_x + radius * math.cos(rad2)
+                    y2 = center_y + radius * math.sin(rad2)
+                    
+                    shapes.append({
+                        'type': 'triangle',
+                        'points': [
+                            {'x': center_x, 'y': center_y},
+                            {'x': int(x1), 'y': int(y1)},
+                            {'x': int(x2), 'y': int(y2)}
+                        ],
+                        'color': colors[i % len(colors)]
+                    })
+                
+                # Label
+                label_angle = current_angle + angle / 2
+                label_rad = math.radians(label_angle)
+                label_x = center_x + (radius + 50) * math.cos(label_rad)
+                label_y = center_y + (radius + 50) * math.sin(label_rad)
+                
+                shapes.append({
+                    'type': 'text',
+                    'x': int(label_x),
+                    'y': int(label_y),
+                    'text': f"{label} ({int(value/total*100)}%)",
+                    'fontSize': 14,
+                    'fontFamily': 'Arial',
+                    'color': '#000000'
+                })
+                
+                current_angle += angle
+            
+            logger.info(f"Generated pie chart with {len(labels)} segments")
+        
+        return {
+            "success": True,
+            "shapes": shapes,
+            "viz_type": viz_type,
+            "shape_count": len(shapes)
+        }
+        
+    except Exception as e:
+        logger.error(f"Error generating data visualization: {e}")
+        return {"error": f"Error: {str(e)}"}
+
+
 def generate_icon(icon_name: str, size: int = 100, color: str = '#2563eb') -> dict[str, Any]:
     """
     Generate a simple icon from a name.
