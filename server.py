@@ -217,7 +217,7 @@ def delete_shape(shapes: list[dict], shape_index: int) -> dict[str, Any]:
         return {"error": f"Error: {str(e)}"}
 
 
-def arrange_shapes(shapes: list[dict], arrangement_type: str, spacing: int = 20) -> dict[str, Any]:
+def arrange_shapes(shapes: list[dict], arrangement_type: str, spacing: int = 20, canvas_width: int = 800, canvas_height: int = 600) -> dict[str, Any]:
     """
     Arrange shapes in a specific layout pattern.
     
@@ -225,6 +225,8 @@ def arrange_shapes(shapes: list[dict], arrangement_type: str, spacing: int = 20)
         shapes: List of shape objects on the canvas
         arrangement_type: Type of arrangement ('grid', 'horizontal', 'vertical', 'circle')
         spacing: Space between shapes in pixels
+        canvas_width: Canvas width in pixels
+        canvas_height: Canvas height in pixels
     
     Returns:
         Dictionary with arranged shapes
@@ -236,31 +238,95 @@ def arrange_shapes(shapes: list[dict], arrangement_type: str, spacing: int = 20)
         arranged_shapes = json.loads(json.dumps(shapes))  # Deep copy
         
         if arrangement_type == 'horizontal':
-            x_pos = 50
-            for shape in arranged_shapes:
-                shape['x'] = x_pos
-                shape['y'] = 300
-                x_pos += spacing + 100
+            # Distribute horizontally across canvas width
+            count = len(arranged_shapes)
+            cell_width = canvas_width / count
+            y_center = canvas_height // 2
+            
+            for i, shape in enumerate(arranged_shapes):
+                x_center = int((i * cell_width) + (cell_width / 2))
+                shape['x'] = x_center
+                shape['y'] = y_center
         
         elif arrangement_type == 'vertical':
-            y_pos = 50
-            for shape in arranged_shapes:
-                shape['x'] = 300
-                shape['y'] = y_pos
-                y_pos += spacing + 100
+            # Distribute vertically across canvas height
+            count = len(arranged_shapes)
+            cell_height = canvas_height / count
+            x_center = canvas_width // 2
+            
+            for i, shape in enumerate(arranged_shapes):
+                y_center = int((i * cell_height) + (cell_height / 2))
+                shape['x'] = x_center
+                shape['y'] = y_center
         
         elif arrangement_type == 'grid':
             cols = 3
+            rows = (len(arranged_shapes) + cols - 1) // cols
+            
+            # Divide canvas into equal parts - NO margins, use full canvas
+            cell_width = canvas_width / cols
+            cell_height = canvas_height / rows
+            
+            logger.info(f"Grid layout: {cols}x{rows}, canvas: {canvas_width}x{canvas_height}, cell: {cell_width}x{cell_height}")
+            
             for i, shape in enumerate(arranged_shapes):
                 col = i % cols
                 row = i // cols
-                shape['x'] = 100 + (col * (spacing + 150))
-                shape['y'] = 100 + (row * (spacing + 150))
+                
+                # Calculate center of the cell
+                cell_center_x = int((col * cell_width) + (cell_width / 2))
+                cell_center_y = int((row * cell_height) + (cell_height / 2))
+                
+                logger.info(f"Shape {i} ({shape.get('type')}): row={row}, col={col}, center=({cell_center_x}, {cell_center_y})")
+                
+                # Position shape at cell center
+                shape['x'] = cell_center_x
+                shape['y'] = cell_center_y
+            
+            # Generate grid lines spanning the full canvas
+            grid_lines = []
+            # Vertical lines
+            for i in range(cols + 1):
+                x = int(i * cell_width)
+                grid_lines.append({
+                    'type': 'vertical',
+                    'x': x,
+                    'y1': 0,
+                    'y2': canvas_height
+                })
+            # Horizontal lines
+            for i in range(rows + 1):
+                y = int(i * cell_height)
+                grid_lines.append({
+                    'type': 'horizontal',
+                    'x1': 0,
+                    'x2': canvas_width,
+                    'y': y
+                })
+            
+            logger.info(f"Arranged {len(arranged_shapes)} shapes in {arrangement_type} pattern with {len(grid_lines)} grid lines")
+            return {
+                "success": True,
+                "message": f"Shapes arranged in {arrangement_type} pattern",
+                "shapes": arranged_shapes,
+                "arrangement_type": arrangement_type,
+                "grid": {
+                    "lines": grid_lines,
+                    "cols": cols,
+                    "rows": rows,
+                    "cellWidth": cell_width,
+                    "cellHeight": cell_height,
+                    "startX": 0,
+                    "startY": 0
+                }
+            }
         
         elif arrangement_type == 'circle':
             import math
-            center_x, center_y = 600, 300
-            radius = 200
+            # Use canvas dimensions for circle center
+            center_x = canvas_width // 2
+            center_y = canvas_height // 2
+            radius = min(canvas_width, canvas_height) // 3  # Proportional to canvas
             count = len(arranged_shapes)
             for i, shape in enumerate(arranged_shapes):
                 angle = (i / count) * 2 * math.pi

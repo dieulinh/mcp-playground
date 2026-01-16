@@ -42,6 +42,33 @@ def health():
     })
 
 
+def transform_shape_for_canvas(shape):
+    """
+    Transform AI-generated shape format to canvas-compatible format.
+    Triangles need special handling to convert x,y,width,height to points array.
+    """
+    if shape.get('type') == 'triangle' and 'points' not in shape:
+        # Convert triangle from x,y,width,height to points array
+        x = shape.get('x', 0)
+        y = shape.get('y', 0)
+        width = shape.get('width', 100)
+        height = shape.get('height', 100)
+        
+        # Create points for triangle (top center, bottom left, bottom right)
+        shape['points'] = [
+            {'x': x + width / 2, 'y': y},  # Top center
+            {'x': x, 'y': y + height},      # Bottom left
+            {'x': x + width, 'y': y + height}  # Bottom right
+        ]
+        # Remove x, y, width, height as they're not needed with points
+        shape.pop('x', None)
+        shape.pop('y', None)
+        shape.pop('width', None)
+        shape.pop('height', None)
+    
+    return shape
+
+
 @app.route('/api/ai/generate-shapes', methods=['POST'])
 def api_generate_shapes():
     """Generate shapes from natural language request."""
@@ -61,6 +88,10 @@ def api_generate_shapes():
         
         if "error" in result:
             return jsonify(result), 400
+        
+        # Transform shapes to canvas-compatible format
+        if 'shapes' in result:
+            result['shapes'] = [transform_shape_for_canvas(shape) for shape in result['shapes']]
         
         return jsonify(result), 200
     
@@ -145,8 +176,13 @@ def api_arrange_shapes():
         shapes = data['shapes']
         arrangement_type = data['arrangement_type']
         spacing = data.get('spacing', 20)
+        # Support both camelCase and snake_case for canvas dimensions
+        canvas_width = data.get('canvas_width') or data.get('canvasWidth', 1200)
+        canvas_height = data.get('canvas_height') or data.get('canvasHeight', 600)
         
-        result = arrange_shapes(shapes, arrangement_type, spacing)
+        logger.info(f"Arranging {len(shapes)} shapes in {arrangement_type} pattern with canvas {canvas_width}x{canvas_height}")
+        
+        result = arrange_shapes(shapes, arrangement_type, spacing, canvas_width, canvas_height)
         
         if "error" in result:
             return jsonify(result), 400
