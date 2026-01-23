@@ -70,6 +70,7 @@ def transform_shape_for_canvas(shape):
     return shape
 
 
+@app.route('/generate-shapes', methods=['POST'])
 @app.route('/api/ai/generate-shapes', methods=['POST'])
 def api_generate_shapes():
     """Generate shapes from natural language request."""
@@ -138,6 +139,131 @@ def api_modify_shape():
     
     except Exception as e:
         logger.error(f"Error in modify_shape endpoint: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/ai/modify-group', methods=['POST'])
+def api_modify_group():
+    """Modify shapes in a group either via explicit modifications or by an AI request.
+
+    Payload options:
+    - { shapes: [...], group: { id, name, objectIndices }, modifications: { ... } }
+      Applies `modifications` to each shape at indices in `group.objectIndices`.
+
+    - { request: "make group red and outlined", canvasWidth, canvasHeight, group: { ... } }
+      Calls the AI generator to produce replacement shapes for the group's intent and returns them
+      so the frontend can replace or merge as it sees fit.
+    """
+    try:
+        data = request.get_json() or {}
+
+        group = data.get('group')
+        if not group:
+            return jsonify({"error": "Missing 'group' parameter"}), 400
+
+        shapes = data.get('shapes', [])
+        modifications = data.get('modifications')
+        ai_request = data.get('request')
+        canvas_width = data.get('canvasWidth', 1200)
+        canvas_height = data.get('canvasHeight', 600)
+
+        # If explicit modifications provided, apply to each index in group.objectIndices
+        if modifications is not None:
+            if not isinstance(shapes, list):
+                return jsonify({"error": "'shapes' must be an array when using modifications"}), 400
+
+            indices = group.get('objectIndices', []) or []
+            modified_shapes = json.loads(json.dumps(shapes))
+            modified_count = 0
+            for idx in indices:
+                if isinstance(idx, int) and 0 <= idx < len(modified_shapes):
+                    for k, v in modifications.items():
+                        modified_shapes[idx][k] = v
+                    modified_count += 1
+
+            logger.info(f"Applied modifications to {modified_count} shapes in group {group.get('id')}")
+            return jsonify({
+                "success": True,
+                "message": f"Modified {modified_count} shapes in group",
+                "shapes": modified_shapes,
+                "group": group
+            }), 200
+
+        # Otherwise, if an AI request is provided, generate shapes for the group's request
+        if ai_request:
+            logger.info(f"AI modify request for group {group.get('id')}: {ai_request}")
+
+            # If caller provided the group's shapes, ask the AI to modify those shapes
+            if isinstance(shapes, list) and len(shapes) > 0:
+                logger.info(f"modify-group received {len(shapes)} source shapes for group {group.get('id')}")
+                # Build a prompt that includes the original shapes and the instruction
+                try:
+                    shapes_json = json.dumps(shapes)
+                except Exception:
+                    shapes_json = str(shapes)
+
+                composite_request = (
+                    f"You are given an array of canvas shape objects in JSON.\n"
+                    f"Original shapes: {shapes_json}\n"
+                    f"Instruction: {ai_request}\n"
+                    "Modify the original shapes according to the instruction and return a JSON object with a single key 'shapes' containing the modified shapes array."
+                )
+
+                result = generate_shapes(composite_request, canvas_width, canvas_height)
+                if 'error' in result:
+                    logger.error(f"AI generate error for modify-group: {result}")
+                    return jsonify(result), 400
+
+                generated = result.get('shapes', [])
+                logger.info(f"AI returned {len(generated)} generated shapes for modify-group (group {group.get('id')})")
+                # Transform shapes for canvas compatibility
+                generated = [transform_shape_for_canvas(s) for s in generated]
+
+                # Fallback: if AI returned no shapes, return the original shapes back so frontend can duplicate
+                if not generated:
+                    logger.warning(f"AI returned no shapes for modify-group; falling back to original shapes (group {group.get('id')})")
+                    # Ensure original shapes are transformed too
+                    try:
+                        original_transformed = [transform_shape_for_canvas(s) for s in shapes]
+                    except Exception:
+                        original_transformed = shapes
+                    generated = original_transformed
+
+                return jsonify({
+                    "success": True,
+                    "message": "Generated modified shapes for group",
+                    "generated": generated,
+                    "group": group
+                }), 200
+            else:
+                # Fallback behavior: generate new shapes from the instruction alone
+                logger.info(f"Generating AI replacement shapes for group {group.get('id')}: {ai_request}")
+                result = generate_shapes(ai_request, canvas_width, canvas_height)
+                if 'error' in result:
+                    logger.error(f"AI generate error for modify-group fallback: {result}")
+                    return jsonify(result), 400
+
+                # Transform shapes to canvas-compatible format
+                if 'shapes' in result:
+                    result['shapes'] = [transform_shape_for_canvas(shape) for shape in result['shapes']]
+
+                generated = result.get('shapes', [])
+                logger.info(f"AI returned {len(generated)} generated shapes for modify-group (fallback, group {group.get('id')})")
+
+                if not generated:
+                    logger.warning(f"AI fallback returned no shapes; returning empty array for group {group.get('id')}")
+
+                return jsonify({
+                    "success": True,
+                    "message": "Generated replacement shapes for group",
+                    "generated": generated,
+                    "group": group
+                }), 200
+
+        return jsonify({"error": "Either 'modifications' or 'request' must be provided"}), 400
+
+    except Exception as e:
+        logger.error(f"Error in modify_group endpoint: {e}")
         return jsonify({"error": str(e)}), 500
 
 
@@ -360,7 +486,7 @@ def list_available_tools():
         {
             "name": "generate_shapes",
             "description": "Generate canvas shapes from natural language request",
-            "endpoint": "/api/ai/generate-shapes"
+            "endpoint": "/generate-shapes"
         },
         {
             "name": "list_shapes",
