@@ -586,6 +586,7 @@ def analyze_canvas(shapes: list[dict]) -> dict[str, Any]:
 
 
 def generate_data_visualization(data: dict, viz_type: str = 'table', canvas_width: int = 1200, canvas_height: int = 600) -> dict[str, Any]:
+    print(data, viz_type)
     """
     Generate data visualizations (tables, bar charts, pie charts) from structured data.
     
@@ -763,12 +764,30 @@ def generate_data_visualization(data: dict, viz_type: str = 'table', canvas_widt
                 current_angle += angle
             
             logger.info(f"Generated pie chart with {len(labels)} segments")
-        
+
+        # Prepare group metadata for the visualization so the frontend
+        # can attach group ids and create grouped objects in the canvas.
+        groups = []
+        if shapes:
+            try:
+                import time
+                group_id = f"group_{viz_type}_{int(time.time() * 1000)}"
+            except Exception:
+                group_id = f"group_{viz_type}_0"
+
+            groups.append({
+                "id": group_id,
+                "name": f"AI {viz_type}",
+                # indices are relative to the returned shapes array
+                "objectIndices": list(range(len(shapes)))
+            })
+
         return {
             "success": True,
             "shapes": shapes,
             "viz_type": viz_type,
-            "shape_count": len(shapes)
+            "shape_count": len(shapes),
+            "groups": groups
         }
         
     except Exception as e:
@@ -831,9 +850,33 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> dict:
         request = arguments.get("request", "")
         canvas_width = arguments.get("canvas_width", 1200)
         canvas_height = arguments.get("canvas_height", 600)
-        
-        result = generate_shapes(request, canvas_width, canvas_height)
-        
+        params = arguments.get("params", {}) or {}
+
+        # If params specify a visualization type, route to the visualization generator
+        viz_type = params.get("type") or params.get("viz_type")
+
+        # Infer visualization type from the free-text request when not explicitly provided
+        if not viz_type and isinstance(request, str):
+            rq = request.lower()
+            if "bar chart" in rq or "barchart" in rq or "bar-chart" in rq:
+                viz_type = "bar_chart"
+            elif "pie chart" in rq or "piechart" in rq or "pie-chart" in rq:
+                viz_type = "pie_chart"
+            elif "table" in rq or "data table" in rq or "datatable" in rq:
+                viz_type = "table"
+
+        if viz_type in ("table", "bar_chart", "pie_chart"):
+            data = params.get("data") or {}
+            # If no structured data provided, include a marker so frontend can decide next steps
+            if not data:
+                logger.info(f"Detected viz_type={viz_type} from request but no data provided")
+                result = {"success": False, "error": "viz_type_detected_but_no_data", "detected_viz_type": viz_type}
+            else:
+                result = generate_data_visualization(data, viz_type, canvas_width, canvas_height)
+        else:
+            # Fallback to natural language shape generation
+            result = generate_shapes(request, canvas_width, canvas_height)
+
         return {
             "content": [{"type": "text", "text": json.dumps(result)}],
             "is_error": "error" in result

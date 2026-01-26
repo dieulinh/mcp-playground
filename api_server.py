@@ -83,10 +83,48 @@ def api_generate_shapes():
         ai_request = data['request']
         canvas_width = data.get('canvasWidth', 1200)
         canvas_height = data.get('canvasHeight', 600)
+        params = data.get('params', {}) or {}
+        viz_type = params.get('type') or params.get('viz_type')
+
+        # If no explicit params, try to infer simple chart data from the request text
+        if not viz_type and isinstance(ai_request, str):
+            rq = ai_request.lower()
+            if 'bar chart' in rq or 'barchart' in rq or 'bar-chart' in rq:
+                viz_type = 'bar_chart'
+            elif 'pie chart' in rq or 'piechart' in rq or 'pie-chart' in rq:
+                viz_type = 'pie_chart'
+            elif 'table' in rq or 'data table' in rq or 'datatable' in rq:
+                viz_type = 'table'
+
+        # If we detected a viz type, attempt to parse labels and values from the request
+        if viz_type and not params.get('data'):
+            import re
+            # Pattern: "of A,B,C with values 10,20,15" (case-insensitive)
+            m = re.search(r"of\s+([A-Za-z0-9,\s]+?)\s+(?:with|and)\s+values?\s+([0-9,\s]+)", ai_request, re.IGNORECASE)
+            if m:
+                raw_labels = m.group(1)
+                raw_values = m.group(2)
+                labels = [s.strip() for s in re.split(r",|;", raw_labels) if s.strip()]
+                values = []
+                for v in re.split(r",|;", raw_values):
+                    try:
+                        values.append(float(v.strip()))
+                    except Exception:
+                        pass
+                if labels and values and len(labels) == len(values):
+                    params['data'] = {'labels': labels, 'values': values}
+                    params['type'] = viz_type
+                    logger.info(f"Parsed viz data from request: type={viz_type}, labels={labels}, values={values}")
+                else:
+                    logger.info("Could not parse structured viz data from request")
         
-        logger.info(f"Generating shapes for: {ai_request}")
-        
-        result = generate_shapes(ai_request, canvas_width, canvas_height)
+        logger.info(f"Generating shapes for: {ai_request} (viz_type={viz_type})")
+
+        # If we have params.type and params.data, route to the visualization generator
+        if params.get('type') and params.get('data') and params.get('type') in ('table', 'bar_chart', 'pie_chart'):
+            result = generate_data_visualization(params['data'], params['type'], canvas_width, canvas_height)
+        else:
+            result = generate_shapes(ai_request, canvas_width, canvas_height)
         
         if "error" in result:
             return jsonify(result), 400
